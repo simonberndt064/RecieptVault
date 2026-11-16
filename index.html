@@ -1,0 +1,491 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Receipt Vault OCR</title>
+
+<style>
+
+body{
+    background:#121212;
+    color:white;
+    font-family:Arial,sans-serif;
+    margin:0;
+    padding:20px;
+}
+
+.container{
+    max-width:900px;
+    margin:auto;
+}
+
+h1,h2{
+    color:#4da3ff;
+}
+
+input,
+textarea{
+    width:100%;
+    padding:12px;
+    margin-bottom:12px;
+    border:none;
+    border-radius:8px;
+    box-sizing:border-box;
+    font-size:16px;
+}
+
+button{
+    background:#4da3ff;
+    color:white;
+    border:none;
+    border-radius:8px;
+    padding:12px 20px;
+    font-size:16px;
+    cursor:pointer;
+    margin-bottom:10px;
+}
+
+button:hover{
+    background:#2f8df5;
+}
+
+.receipt{
+    background:#222;
+    padding:15px;
+    margin-top:15px;
+    border-radius:10px;
+}
+
+.receipt img{
+    max-width:250px;
+    display:block;
+    margin-top:10px;
+    border-radius:8px;
+}
+
+.deleteBtn{
+    background:#cc3333;
+}
+
+.deleteBtn:hover{
+    background:#aa2222;
+}
+
+.toolbar{
+    display:flex;
+    gap:10px;
+    flex-wrap:wrap;
+    margin-bottom:15px;
+}
+
+.toolbar button{
+    flex:1;
+}
+
+.photoButton{
+    display:inline-block;
+    padding:12px 20px;
+    background:#4da3ff;
+    color:white;
+    border-radius:6px;
+    cursor:pointer;
+    font-weight:bold;
+    margin-bottom:10px;
+}
+
+.photoButton:hover{
+    background:#2f8df5;
+}
+
+#photoStatus{
+    display:block;
+    color:#cccccc;
+    margin-top:8px;
+    margin-bottom:15px;
+}
+
+#ocrStatus{
+    color:#7dd3fc;
+    margin-bottom:10px;
+    font-weight:bold;
+}
+
+#ocrText{
+    min-height:180px;
+}
+
+</style>
+</head>
+
+<body>
+
+<div class="container">
+
+<h1>📋 Receipt Vault OCR</h1>
+
+<p>Store Name</p>
+<input id="store">
+
+<p>Amount</p>
+<input id="amount">
+
+<p>Purchase Date</p>
+<input type="date" id="purchaseDate">
+
+<p>Notes</p>
+<textarea id="notes"></textarea>
+
+<p>📷 Receipt Photo</p>
+
+<label
+for="receiptPhoto"
+class="photoButton">
+📷 Take Photo
+</label>
+
+<span id="photoStatus">
+No photo selected
+</span>
+
+<input
+type="file"
+id="receiptPhoto"
+accept="image/*"
+capture="environment"
+style="display:none;"
+onchange="updatePhotoStatus()">
+
+<button onclick="scanReceipt()">
+🔍 Scan Receipt
+</button>
+
+<div id="ocrStatus"></div>
+
+<p>OCR Results</p>
+
+<textarea
+id="ocrText"
+placeholder="OCR text will appear here..."></textarea>
+
+<button onclick="saveReceipt()">
+Save Receipt
+</button>
+
+<hr>
+
+<div class="toolbar">
+
+<button onclick="exportReceipts()">
+Export Backup
+</button>
+
+<button onclick="document.getElementById('importFile').click()">
+Import Backup
+</button>
+
+</div>
+
+<input
+type="file"
+id="importFile"
+accept=".json"
+style="display:none"
+onchange="importReceipts(event)">
+
+<p>Search</p>
+
+<input
+id="search"
+placeholder="Search..."
+onkeyup="displayReceipts()">
+
+<h2>Saved Receipts</h2>
+
+<div id="receiptList"></div>
+
+</div>
+
+<script src="https://unpkg.com/tesseract.js@5/dist/tesseract.min.js"></script>
+
+<script>
+
+let receipts =
+JSON.parse(
+    localStorage.getItem("receipts")
+) || [];
+
+function updatePhotoStatus(){
+
+    const photo =
+    document.getElementById("receiptPhoto")
+    .files[0];
+
+    document.getElementById("photoStatus")
+    .innerText =
+    photo
+    ? photo.name
+    : "No photo selected";
+}
+
+async function scanReceipt(){
+
+    const photo =
+    document.getElementById("receiptPhoto")
+    .files[0];
+
+    if(!photo){
+
+        alert("Please select a receipt photo");
+
+        return;
+    }
+
+    document.getElementById("ocrStatus")
+    .innerText = "Scanning receipt...";
+
+    const result =
+    await Tesseract.recognize(
+        photo,
+        "eng"
+    );
+
+    const text =
+    result.data.text;
+
+    document.getElementById("ocrText")
+    .value = text;
+
+    document.getElementById("ocrStatus")
+    .innerText = "✅ Scan complete";
+
+    autoFillFields(text);
+}
+
+function autoFillFields(text){
+
+    const lines =
+    text.split("\n")
+    .filter(line => line.trim());
+
+    if(
+        lines.length > 0 &&
+        document.getElementById("store").value === ""
+    ){
+
+        document.getElementById("store")
+        .value = lines[0];
+    }
+
+    const amounts =
+    text.match(/\d+\.\d{2}/g);
+
+    if(
+        amounts &&
+        amounts.length > 0 &&
+        document.getElementById("amount").value === ""
+    ){
+
+        document.getElementById("amount")
+        .value =
+        amounts[amounts.length - 1];
+    }
+}
+
+function saveReceipt(){
+
+    const store =
+    document.getElementById("store").value;
+
+    const amount =
+    document.getElementById("amount").value;
+
+    const date =
+    document.getElementById("purchaseDate").value;
+
+    const notes =
+    document.getElementById("notes").value;
+
+    const ocrText =
+    document.getElementById("ocrText").value;
+
+    const photo =
+    document.getElementById("receiptPhoto")
+    .files[0];
+
+    if(
+        !store ||
+        !amount ||
+        !photo
+    ){
+
+        alert(
+        "Store Name, Amount and Receipt Photo are required."
+        );
+
+        return;
+    }
+
+    const reader =
+    new FileReader();
+
+    reader.onload = function(e){
+
+        receipts.push({
+
+            id: Date.now(),
+
+            store: store,
+
+            amount: amount,
+
+            date: date,
+
+            notes: notes,
+
+            ocr: ocrText,
+
+            image: e.target.result
+
+        });
+
+        localStorage.setItem(
+            "receipts",
+            JSON.stringify(receipts)
+        );
+
+        clearForm();
+
+        displayReceipts();
+    };
+
+    reader.readAsDataURL(photo);
+}
+
+function clearForm(){
+
+    document.getElementById("store").value = "";
+    document.getElementById("amount").value = "";
+    document.getElementById("purchaseDate").value = "";
+    document.getElementById("notes").value = "";
+    document.getElementById("ocrText").value = "";
+    document.getElementById("receiptPhoto").value = "";
+
+    document.getElementById("photoStatus")
+    .innerText = "No photo selected";
+
+    document.getElementById("ocrStatus")
+    .innerText = "";
+}
+
+function deleteReceipt(id){
+
+    receipts =
+    receipts.filter(
+        r => r.id !== id
+    );
+
+    localStorage.setItem(
+        "receipts",
+        JSON.stringify(receipts)
+    );
+
+    displayReceipts();
+}
+
+function displayReceipts(){
+
+    let html = "";
+
+    const search =
+    document.getElementById("search")
+    .value
+    .toLowerCase();
+
+    receipts.forEach(function(receipt){
+
+        const searchable = (
+
+            receipt.store + " " +
+            receipt.amount + " " +
+            receipt.date + " " +
+            receipt.notes + " " +
+            (receipt.ocr || "")
+
+        ).toLowerCase();
+
+        if(!searchable.includes(search)){
+            return;
+        }
+
+        html +=
+        '<div class="receipt">' +
+        '<h3>' + receipt.store + '</h3>' +
+        '<p>Amount: $' + receipt.amount + '</p>' +
+        '<p>Date: ' + receipt.date + '</p>' +
+        '<p>' + receipt.notes + '</p>' +
+        '<img src="' + receipt.image + '">' +
+        '<br><br>' +
+        '<button class="deleteBtn" onclick="deleteReceipt(' + receipt.id + ')">Delete</button>' +
+        '</div>';
+    });
+
+    document.getElementById("receiptList")
+    .innerHTML = html;
+}
+
+function exportReceipts(){
+
+    const blob =
+    new Blob(
+        [JSON.stringify(receipts,null,2)],
+        {type:"application/json"}
+    );
+
+    const link =
+    document.createElement("a");
+
+    link.href =
+    URL.createObjectURL(blob);
+
+    link.download =
+    "ReceiptVaultBackup.json";
+
+    link.click();
+}
+
+function importReceipts(event){
+
+    const file =
+    event.target.files[0];
+
+    if(!file) return;
+
+    const reader =
+    new FileReader();
+
+    reader.onload =
+    function(e){
+
+        receipts =
+        JSON.parse(e.target.result);
+
+        localStorage.setItem(
+            "receipts",
+            JSON.stringify(receipts)
+        );
+
+        displayReceipts();
+
+        alert("Backup Imported");
+    };
+
+    reader.readAsText(file);
+}
+
+displayReceipts();
+
+</script>
+
+</body>
+</html>
